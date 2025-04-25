@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { requestProvider } from 'webln'
 import { QRCodeSVG } from 'qrcode.react'
+import { QrReader } from 'react-qr-reader'
 
 function App() {
   const [webln, setWebln] = useState(null)
@@ -22,9 +23,9 @@ function App() {
       : window.matchMedia('(prefers-color-scheme: dark)').matches
   })
   const [, setBalance] = useState(null)
-  const [, setTransactions] = useState(null)
   const [methodResult, setMethodResult] = useState(null)
   const [activeMethod, setActiveMethod] = useState(null)
+  const [showScanner, setShowScanner] = useState(false)
 
   // Initialize WebLN
   useEffect(() => {
@@ -52,10 +53,17 @@ function App() {
       if (now - lastScrollTime > 1000) {
         setLastScrollTime(now)
         try {
-          await webln.sendPayment({
+          // First create an invoice
+          const invoiceResult = await webln.makeInvoice({
             amount: 1,
-            memo: 'Auto-payment on scroll'
+            defaultMemo: 'Auto-payment on scroll'
           })
+
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          // Then pay the invoice
+          await webln.sendPayment(invoiceResult.paymentRequest)
+          
           setPaymentStatus('Auto-payment of 1 sat sent successfully!')
           setTimeout(() => setPaymentStatus(''), 3000)
         } catch (err) {
@@ -96,19 +104,6 @@ function App() {
     }
   }
 
-  // Get transactions
-  const handleGetTransactions = async () => {
-    if (!webln) return
-    
-    try {
-      setActiveMethod('getTransactions')
-      const txs = await webln.getTransactions()
-      setTransactions(txs)
-      setMethodResult(txs)
-    } catch (err) {
-      setError('Failed to get transactions: ' + err.message)
-    }
-  }
 
   // Make an invoice
   const handleMakeInvoice = async () => {
@@ -139,6 +134,41 @@ function App() {
   const toggleDarkMode = () => {
     setDarkMode(prevMode => !prevMode)
   }
+
+  // Handle QR code scan result
+  const handleScan = async (result) => {
+    if (result) {
+      // Extract the invoice from the QR code data
+      const scannedInvoice = result?.text || '';
+      
+      // Check if it's a Lightning invoice (starts with 'lnbc')
+      if (scannedInvoice.startsWith('lnbc')) {
+        setLnAddress(scannedInvoice);
+        setShowScanner(false);
+        
+        // Optionally, automatically pay the invoice
+        if (webln) {
+          try {
+            setPaymentStatus('Processing payment from scanned QR code...');
+            const payResult = await webln.sendPayment(scannedInvoice);
+            setPaymentStatus(`Payment sent successfully! Preimage: ${payResult.preimage}`);
+            setMethodResult(payResult);
+            setActiveMethod('sendPayment');
+          } catch (err) {
+            setPaymentStatus('Payment failed: ' + err.message);
+          }
+        }
+      } else {
+        setError('Invalid Lightning invoice QR code');
+        setTimeout(() => setError(null), 3000);
+      }
+    }
+  };
+
+  // Toggle QR scanner
+  const toggleScanner = () => {
+    setShowScanner(!showScanner);
+  };
 
   // Send payment
   const handleSendPayment = async () => {
@@ -216,6 +246,34 @@ function App() {
         {error && <div className={`${darkMode ? 'bg-red-900 border-red-700 text-red-300' : 'bg-red-50 border-red-200 text-red-600'} border px-4 py-3 rounded mb-4`}>{error}</div>}
         {paymentStatus && <div className={`${darkMode ? 'bg-blue-900 border-blue-700 text-blue-300' : 'bg-blue-50 border-blue-200 text-blue-600'} border px-4 py-3 rounded mb-4`}>{paymentStatus}</div>}
         
+        {/* QR Code Scanner */}
+        {showScanner && (
+          <div className={`${darkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'} p-6 rounded-lg shadow-sm mb-6`}>
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-semibold">Scan Lightning Invoice</h2>
+              <button 
+                onClick={toggleScanner}
+                className={`p-2 rounded-lg ${darkMode ? 'bg-gray-700 hover:bg-gray-600' : 'bg-red-100 hover:bg-red-200'} transition-colors`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="max-w-md mx-auto">
+              <QrReader
+                constraints={{ facingMode: 'environment' }}
+                onResult={handleScan}
+                className={`${darkMode ? 'border-gray-700' : 'border-gray-300'} border rounded overflow-hidden`}
+                scanDelay={500}
+              />
+              <p className={`mt-2 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                Point your camera at a Lightning invoice QR code to scan and pay.
+              </p>
+            </div>
+          </div>
+        )}
+        
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* WebLN Status */}
           <div className={`${darkMode ? 'bg-gray-800' : 'bg-white border border-gray-200'} p-6 rounded-lg shadow-sm`}>
@@ -259,19 +317,6 @@ function App() {
                 } disabled:opacity-50`}
               >
                 getBalance
-              </button>
-              <button 
-                onClick={handleGetTransactions}
-                disabled={!webln}
-                className={`px-3 py-1 rounded text-sm font-medium ${
-                  activeMethod === 'getTransactions' 
-                    ? 'bg-blue-600 text-white' 
-                    : darkMode 
-                      ? 'bg-blue-900 text-blue-300' 
-                      : 'bg-blue-50 text-blue-600 border border-blue-200'
-                } disabled:opacity-50`}
-              >
-                getTransactions
               </button>
               <button 
                 onClick={handleMakeInvoice}
@@ -397,7 +442,7 @@ function App() {
               />
             </div>
             
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <button 
                 onClick={handleSendPayment}
                 disabled={!webln || !lnAddress}
@@ -412,6 +457,20 @@ function App() {
                 className="bg-purple-400 hover:bg-purple-500 text-white font-bold py-2 px-4 rounded disabled:opacity-50 transition-colors"
               >
                 Send Async
+              </button>
+              
+              <button 
+                onClick={toggleScanner}
+                disabled={!webln}
+                className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded disabled:opacity-50 transition-colors"
+              >
+                <span className="flex items-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Scan QR Code
+                </span>
               </button>
             </div>
           </div>
