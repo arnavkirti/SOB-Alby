@@ -9,15 +9,14 @@ A React-based demonstration application for interacting with the Bitcoin Lightni
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Technologies Used](#technologies-used)
-- [Development](#development)
-- [Acknowledgments](#acknowledgments)
-- [License](#license)
+- [Overview](#-overview)
+- [Features](#-features)
+- [Prerequisites](#-prerequisites)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Technologies Used](#-technologies-used)
+- [Development](#-development)
+- [Acknowledgments](#-acknowledgments)
 
 ## 🔍 Overview
 
